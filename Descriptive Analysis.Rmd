@@ -1,0 +1,88 @@
+---
+title: "Descriptive Stats"
+author: "Sushanth Chintalapati"
+date: "5/5/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+```
+
+
+
+```{r loading libraries and data}
+library("readxl")
+library("tidyverse")
+library('dplyr')
+library('ggplot2')
+my_data <- read.delim("laundet_groc_1114_1165.txt", sep ="")
+d <- my_data
+info <- read_xls("prod_laundet.xls")
+```
+
+
+```{r preprocessing}
+i <- info %>% select(c("L3", 'L4', 'L5', 'SY', 'GE', 'VEND', 'ITEM', 'VOL_EQ'))
+i$SY <- i$SY %>% as.integer()
+i$GE <- i$GE %>% as.integer()
+i$VEND <- i$VEND %>% as.integer()
+i$ITEM <- i$ITEM %>% as.integer()
+data <- left_join(d, i, by = c('SY'='SY', 'GE'='GE', 'VEND'='VEND',  'ITEM'='ITEM')) %>% select(-c("SY", 'GE' , 'VEND', 'ITEM'))
+
+blist <- c('TIDE', 'ALL', 'PUREX', 'WISK', 'GAIN', 'CHEER')
+clist <- info %>% select("L3", "L4", "L5") %>% distinct() %>% as.data.frame()
+colnames(clist) <- c("Parent Company", "Company", "Brand")
+rbind(clist[(clist$Brand == "TIDE"),], 
+      clist[(clist$Brand == "ALL"),],
+      clist[(clist$Brand == "PUREX"),],
+      clist[(clist$Brand == "WISK"),],
+      clist[(clist$Brand == "GAIN"),],
+      clist[(clist$Brand == "CHEER"),]
+)
+
+data$L5[!data$L5 %in% blist] = "Other"
+stores <- read.delim("Delivery_Stores.csv", sep = ",") %>% select(c("IRI_KEY", "Market_Name", "MskdName"))
+
+data <- left_join(data, stores, by = ("IRI_KEY"), all = T)
+
+data <- data %>% mutate(ppoz = DOLLARS/(UNITS*VOL_EQ))
+
+#write.csv(data, file = "tableau.csv")
+
+```
+
+```{r Price per oz graph processing}
+week <- read_xls("IRI week translation.xls") %>% as.data.frame()
+colnames(week) <- c("WEEK", "start", "end", "1", "2", "3")
+week <- week %>% select(c("WEEK", "start", "end"))
+
+dsw <- left_join(data, week, by = c("WEEK")) %>% na.omit()
+
+pl <- dsw %>% group_by(L5, WEEK, start, end) %>% summarise(`Avg Price` = mean(ppoz)) %>% arrange(L5, WEEK) 
+
+pl$L5 <- pl$L5 %>% as.character()
+p <- pl %>% na.omit()
+rm(pl)
+p$L5 <- factor(p$L5, levels = c("TIDE", "CHEER", "WISK", "GAIN", "ALL", "other", "PUREX"))
+```
+
+
+```{r Price per oz graph}
+p$L5 <- p$L5 %>% as.character()
+pl <- p %>% na.omit()
+rm(p)
+pl$L5 <- factor(pl$L5, levels = c("TIDE", "CHEER", "WISK", "GAIN", "ALL", "other", "PUREX"))
+pl <- pl %>% mutate(wi = (ifelse(L5 == "WISK", "WISK", "Other")))
+pl$wi <- pl$wi %>% as.factor()
+
+
+pl %>% ggplot(aes(x = end, y = `Avg Price`, color = L5)) + geom_line(size = 0.8) +
+  labs(x = "Date (Month)", y = "Average Price per unit per week", title = "Average Price Per Oz per week trend")
+```
+
